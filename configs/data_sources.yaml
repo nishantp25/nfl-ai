@@ -1,0 +1,547 @@
+# =============================================================================
+# SOURCE MANIFEST -- configs/data_sources.yaml
+# =============================================================================
+# This file is the single source of truth for where every raw dataset comes
+# from. Code does not get to invent datasets: `nfldl.registry` asserts at import
+# time that the set of registered fetchers is EXACTLY the set of datasets
+# declared here.
+#
+# IMPORTANT ON COVERAGE FIELDS
+# ----------------------------
+#   historical_start / historical_end are *declared* coverage. They are claims
+#   that must be re-verified, not facts to trust. `nfldl verify` probes the real
+#   provider and writes reports/verified_coverage.json; `nfldl ingest` clips to
+#   the verified range and refuses silently-missing seasons.
+#
+#   historical_end: null  ==>  "rolls forward with the current season"; resolved
+#   at runtime, never hard-coded.
+#
+# VERIFICATION STAMP
+# ------------------
+#   Values below were verified against the live nflverse-data release assets on
+#   the date in `manifest.verified_on`. Re-run `nfldl verify --write-manifest`
+#   after any nflverse release change. Treat a stale stamp as unverified.
+# =============================================================================
+
+manifest:
+  version: 1
+  verified_on: "2026-09-02"
+  verified_against: "nflreadpy 0.1.5 / nflverse-data GitHub releases"
+  notes: >
+    The current *played* season at verification time was 2025; the 2026 season
+    had not yet opened, so no 2026 game-level assets existed. League-year assets
+    (rosters, weekly rosters, depth charts) already carried 2026. Do not read
+    the project's 2011-2026 target window as coverage for anything.
+
+defaults:
+  local_storage_root: "data/raw"
+  file_format: parquet
+  partitioning: season
+  license_or_usage_notes: >
+    nflverse data is released CC-BY 4.0, except FTN charting which is
+    CC-BY-SA 4.0. Attribute nflverse (and FTN where applicable) in any
+    published output.
+
+# -----------------------------------------------------------------------------
+# SOURCE PRIORITY -- used by nfldl.conflicts.resolve() when sources disagree.
+# Lower rank wins unless an explicit, recorded override exists.
+# -----------------------------------------------------------------------------
+source_priority:
+  - rank: 1
+    tier: official_nfl
+    description: Official NFL / public NFL releases (incl. NGS as distributed by the NFL).
+  - rank: 2
+    tier: nflverse
+    description: nflverse canonical datasets accessed through nflreadpy.
+  - rank: 3
+    tier: established_db
+    description: Established historical football databases (e.g. Pro Football Reference).
+  - rank: 4
+    tier: reputable_public
+    description: Other reputable, documented public datasets (NOAA/NCEI, Meteostat, Open-Meteo/ERA5).
+  - rank: 5
+    tier: curated_fallback
+    description: Manually curated, in-repo fallback tables. Every row carries a source note.
+
+# -----------------------------------------------------------------------------
+# DERIVED FEATURES -- MUST NOT be downloaded from third parties.
+# nfldl.registry raises if a fetcher is ever registered for one of these.
+# -----------------------------------------------------------------------------
+forbidden_downloads:
+  - elo_ratings
+  - bayesian_team_ratings
+  - offensive_strength
+  - defensive_strength
+  - qb_ratings
+  - player_value_ratings
+  - injury_impact_ratings
+  - roster_continuity
+  - oline_continuity
+  - receiving_corps_strength
+  - defensive_front_strength
+  - secondary_strength
+  - recent_form
+  - ewma_performance
+  - opponent_adjusted_epa
+  - strength_of_schedule
+  - head_to_head_features
+  - coaching_tendencies
+  - scheme_tendencies
+  - matchup_advantages
+  - rest_differences
+  - travel_effects
+  - feature_differentials
+
+# =============================================================================
+# DATASETS
+# =============================================================================
+datasets:
+
+  # ---------------------------------------------------------------- nflverse
+  play_by_play:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_pbp(seasons=...)"
+    upstream: "https://github.com/nflverse/nflverse-data/releases/tag/pbp"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_pbp.html"
+    historical_start: 1999
+    historical_end: null
+    verified_start: 1999
+    verified_end: 2025
+    update_frequency: "in-season, roughly daily during the week; final after the season"
+    local_storage_path: "data/raw/nflverse/play_by_play/season={season}/part.parquet"
+    primary_key: [game_id, play_id]
+    timestamp_field: time_of_day        # UTC wall clock of the snap, may be null pre-2011
+    partition_by: season
+    required: true
+    role: >
+      Canonical foundation. EPA, success rate, pass/rush efficiency, explosive
+      rate, sack rate, turnovers, situational and drive performance, and every
+      team/coaching tendency are DERIVED from this table. Never download a
+      third-party EPA file.
+
+  schedules:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_schedules(seasons=...)"
+    upstream: "https://github.com/nflverse/nflverse-data/releases/tag/schedules"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_schedules.html"
+    historical_start: 1999
+    historical_end: null
+    verified_start: 1999
+    verified_end: 2026          # forward schedule rows exist before games are played
+    update_frequency: "continuous; scores fill in during the season"
+    local_storage_path: "data/raw/nflverse/schedules/season={season}/part.parquet"
+    primary_key: [game_id]
+    timestamp_field: kickoff_utc        # derived by us from gameday + gametime
+    partition_by: season
+    required: true
+    role: >
+      THE canonical game table. Head-to-head history, rest, travel, roof and
+      surface context are derived from it. Do not maintain a separate H2H file.
+      Note: `result`/`home_score` are null for unplayed games -- that null is the
+      signal for "future game", and code must not fill it.
+
+  teams:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_teams()"
+    upstream: "https://github.com/nflverse/nflverse-data/releases/tag/teams"
+    historical_start: null
+    historical_end: null
+    update_frequency: "rarely; on relocation or rebrand"
+    local_storage_path: "data/raw/nflverse/teams/part.parquet"
+    primary_key: [team_abbr]
+    timestamp_field: null
+    partition_by: none
+    required: true
+    role: "Team dimension and abbreviation crosswalk (OAK/LV, SD/LAC, STL/LA)."
+
+  players:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_players()"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_players.html"
+    historical_start: null
+    historical_end: null
+    update_frequency: "weekly in season"
+    local_storage_path: "data/raw/nflverse/players/part.parquet"
+    primary_key: [gsis_id]
+    timestamp_field: null
+    partition_by: none
+    required: true
+    role: >
+      Player dimension and the ID crosswalk (GSIS / PFR / PFF / OTC / ESB /
+      ESPN). All player joins go through these IDs. Name joins are a last resort
+      and must be recorded as such.
+
+  rosters:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_rosters(seasons=...)"
+    historical_start: 1920
+    historical_end: null
+    verified_start: 1920
+    verified_end: 2026          # league-year asset; rolls over in March
+    update_frequency: "daily in season"
+    local_storage_path: "data/raw/nflverse/rosters/season={season}/part.parquet"
+    primary_key: [season, team, gsis_id]
+    timestamp_field: null
+    partition_by: season
+    required: true
+    role: "Season-level roster. Snapshot semantics -- see weekly_rosters for point-in-time."
+
+  weekly_rosters:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_rosters_weekly(seasons=...)"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_roster_status.html"
+    historical_start: 2002
+    historical_end: null
+    verified_start: 2002
+    verified_end: 2026
+    update_frequency: "weekly"
+    local_storage_path: "data/raw/nflverse/weekly_rosters/season={season}/part.parquet"
+    primary_key: [season, week, team, gsis_id]
+    timestamp_field: null
+    partition_by: season
+    required: true
+    point_in_time: week          # week-grained; usable as-of week W for week W
+    role: >
+      The correct source for "who was actually on this roster that week",
+      including status changes and IR. Never reconstruct historical rosters from
+      the current roster.
+
+  depth_charts:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_depth_charts(seasons=...)"
+    historical_start: 2001
+    historical_end: null
+    verified_start: 2001
+    verified_end: 2026
+    update_frequency: "weekly in season"
+    local_storage_path: "data/raw/nflverse/depth_charts/season={season}/part.parquet"
+    primary_key: [season, week, club_code, gsis_id, depth_position]
+    timestamp_field: dt
+    partition_by: season
+    required: false
+    point_in_time: week
+    role: "Starter/backup structure. Schema changed materially in 2025 -- schema-drift tolerant reads only."
+
+  injuries:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_injuries(seasons=...)"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_injuries.html"
+    historical_start: 2009
+    historical_end: null
+    verified_start: 2009
+    verified_end: 2025
+    update_frequency: "weekly; practice reports Wed-Fri, game status Fri/Sat"
+    local_storage_path: "data/raw/nflverse/injuries/season={season}/part.parquet"
+    primary_key: [season, week, team, gsis_id]
+    timestamp_field: date_modified
+    partition_by: season
+    required: true
+    point_in_time: week
+    leakage_risk: medium
+    leakage_note: >
+      The TABLE is pregame -- practice reports land Wed-Fri and the final game
+      status Fri/Sat, all before kickoff. The risk is in the JOIN: attaching
+      week W+1's report to week W's game, or using a `date_modified` that was
+      revised after the game. Always join through pit.asof_join on kickoff.
+    role: >
+      Weekly injury reports. `report_status` is the pregame designation and is
+      SAFE for a pregame prediction of that week. There is no postgame column in
+      this table, but any injury information joined from elsewhere must carry a
+      knowledge timestamp -- see nfldl.pit.
+
+  snap_counts:
+    provider: nflverse
+    tier: nflverse
+    upstream_origin: "Pro Football Reference (redistributed by nflverse)"
+    access: "nflreadpy.load_snap_counts(seasons=...)"
+    historical_start: 2012
+    historical_end: null
+    verified_start: 2012
+    verified_end: 2025
+    update_frequency: "weekly, postgame"
+    local_storage_path: "data/raw/nflverse/snap_counts/season={season}/part.parquet"
+    primary_key: [game_id, pfr_player_id]
+    timestamp_field: null
+    partition_by: season
+    required: false
+    leakage_risk: high
+    role: >
+      POSTGAME data. Snap counts for week W are only knowable after week W is
+      played. Lag by at least one week before using as a feature.
+
+  player_stats:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_player_stats(seasons=..., summary_level='week')"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_player_stats.html"
+    historical_start: 1999
+    historical_end: null
+    verified_start: 1999
+    verified_end: 2025
+    update_frequency: "weekly"
+    local_storage_path: "data/raw/nflverse/player_stats/season={season}/part.parquet"
+    primary_key: [player_id, season, week, season_type]
+    timestamp_field: null
+    partition_by: season
+    required: true
+    leakage_risk: high
+    role: "Weekly box-score aggregates. Postgame -- lag before use."
+
+  team_stats:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_team_stats(seasons=..., summary_level='week')"
+    historical_start: 1999
+    historical_end: null
+    verified_start: 1999
+    verified_end: 2025
+    update_frequency: "weekly"
+    local_storage_path: "data/raw/nflverse/team_stats/season={season}/part.parquet"
+    primary_key: [team, season, week, season_type]
+    timestamp_field: null
+    partition_by: season
+    required: true
+    leakage_risk: high
+    role: "Weekly team aggregates. Convenience only -- prefer deriving from play_by_play."
+
+  participation:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_participation(seasons=...)"
+    dictionary: "https://nflreadr.nflverse.com/articles/dictionary_participation.html"
+    historical_start: 2016
+    historical_end: null
+    verified_start: 2016
+    verified_end: 2025
+    update_frequency: "after the season completes; sourced upstream from NGS then FTN"
+    local_storage_path: "data/raw/nflverse/participation/season={season}/part.parquet"
+    primary_key: [nflverse_game_id, play_id]
+    timestamp_field: null
+    partition_by: season
+    required: false
+    coverage_caveat: >
+      NOTHING before 2016. The upstream feed changed hands after 2023, so column
+      fill rates are NOT stable across the 2023/2024 boundary -- verify column
+      null rates per season before modelling, and never impute personnel or
+      formation for 2011-2015. Those features simply do not exist there.
+    role: "Personnel, formation, defenders in box, pass rushers, man/zone, pressure, routes."
+
+  ftn_charting:
+    provider: FTN Data (via nflverse)
+    tier: nflverse
+    access: "nflreadpy.load_ftn_charting(seasons=...)"
+    historical_start: 2022
+    historical_end: null
+    verified_start: 2022
+    verified_end: 2025
+    update_frequency: "weekly in season"
+    local_storage_path: "data/raw/nflverse/ftn_charting/season={season}/part.parquet"
+    primary_key: [nflverse_game_id, nflverse_play_id]
+    timestamp_field: null
+    partition_by: season
+    required: false
+    license_or_usage_notes: "CC-BY-SA 4.0 -- share-alike. Stricter than the rest of nflverse."
+    role: "Manual charting: play action, screens, RPO, motion, no-huddle, blitz counts."
+
+  nextgen_stats:
+    provider: NFL Next Gen Stats (via nflverse)
+    tier: official_nfl
+    access: "nflreadpy.load_nextgen_stats(seasons=..., stat_type='passing'|'rushing'|'receiving')"
+    historical_start: 2016
+    historical_end: null
+    verified_start: 2016
+    verified_end: 2025
+    update_frequency: "weekly in season"
+    local_storage_path: "data/raw/nflverse/nextgen_stats/stat_type={stat_type}/season={season}/part.parquet"
+    primary_key: [season, season_type, week, player_gsis_id, stat_type]
+    timestamp_field: null
+    partition_by: [stat_type, season]
+    variants: [passing, rushing, receiving]
+    required: false
+    leakage_risk: high
+    coverage_caveat: "Nothing before 2016. Field availability differs by stat_type and by season."
+    role: "Summary NGS aggregates (weekly, player-level). Postgame -- lag before use."
+
+  draft_picks:
+    provider: nflverse
+    tier: nflverse
+    upstream_origin: "Pro Football Reference (redistributed by nflverse)"
+    access: "nflreadpy.load_draft_picks(seasons=...)"
+    historical_start: 1980
+    historical_end: null
+    verified_start: 1980
+    verified_end: 2026
+    update_frequency: "annual, late April"
+    local_storage_path: "data/raw/nflverse/draft_picks/part.parquet"
+    primary_key: [season, round, pick]
+    timestamp_field: null
+    partition_by: none
+    required: true
+    role: "Draft capital. Stores player id, year, round, overall pick, team, position."
+
+  trades:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_trades()"
+    historical_start: 2002
+    historical_end: null
+    update_frequency: "as trades occur"
+    local_storage_path: "data/raw/nflverse/trades/part.parquet"
+    primary_key: [trade_id, season, gave, received, pick_season, pick_round, pick_number, pfr_id]
+    timestamp_field: null
+    partition_by: none
+    required: false
+    coverage_caveat: "Has a trade date/season but not always an exact timestamp. Treat date granularity as day."
+    role: "Roster movement via trade, including pick-for-pick and pick-for-player."
+
+  contracts:
+    provider: OverTheCap (via nflverse)
+    tier: reputable_public
+    access: "nflreadpy.load_contracts()"
+    historical_start: 2000
+    historical_end: null
+    update_frequency: "continuous"
+    local_storage_path: "data/raw/nflverse/contracts/part.parquet"
+    primary_key: [otc_id, year_signed, team, value]
+    timestamp_field: null
+    partition_by: none
+    required: false
+    leakage_risk: high
+    coverage_caveat: >
+      This is a CURRENT-STATE table describing contracts as they are known now,
+      including restructures applied after the fact. It is not a point-in-time
+      cap ledger. Using it as a pregame feature for a 2014 game leaks the future.
+      Only `year_signed` and the original terms are safely historical.
+    role: "Contract value as a rough proxy for market-priced player value."
+
+  officials:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_officials(seasons=...)"
+    historical_start: 2015
+    historical_end: null
+    verified_start: 2015
+    verified_end: 2025
+    update_frequency: "weekly"
+    local_storage_path: "data/raw/nflverse/officials/part.parquet"
+    primary_key: [game_id, official_id]
+    timestamp_field: null
+    partition_by: none
+    required: false
+    role: "Referee crew assignment. Crew is announced pregame, so it is safe pregame information."
+
+  combine:
+    provider: nflverse
+    tier: nflverse
+    access: "nflreadpy.load_combine(seasons=...)"
+    historical_start: 2000
+    historical_end: null
+    update_frequency: "annual, March"
+    local_storage_path: "data/raw/nflverse/combine/part.parquet"
+    primary_key: [season, pfr_id]
+    timestamp_field: null
+    partition_by: none
+    required: false
+    role: "Athletic testing. Fixed at entry, so it never leaks."
+
+  pfr_advstats:
+    provider: Pro Football Reference (via nflverse)
+    tier: established_db
+    access: "nflreadpy.load_pfr_advstats(seasons=..., stat_type=..., summary_level='week')"
+    historical_start: 2018
+    historical_end: null
+    verified_start: 2018
+    verified_end: 2025
+    update_frequency: "weekly"
+    local_storage_path: "data/raw/pfr/advstats/stat_type={stat_type}/season={season}/part.parquet"
+    primary_key: [game_id, pfr_player_id, stat_type]
+    timestamp_field: null
+    partition_by: [stat_type, season]
+    variants: [pass, rush, rec, def]
+    required: false
+    leakage_risk: high
+    license_or_usage_notes: >
+      Redistributed by nflverse from PFR. We consume the nflverse mirror only.
+      Do not scrape pro-football-reference.com directly and do not circumvent
+      any access control.
+    role: "Pressure, air yards, broken tackles, coverage stats. Nothing before 2018."
+
+  # ------------------------------------------------------------- non-nflverse
+  stadiums:
+    provider: project-curated
+    tier: curated_fallback
+    access: "nfldl.sources.stadiums.build()"
+    inputs: [schedules, "configs/stadiums.csv"]
+    historical_start: 1999
+    historical_end: null
+    update_frequency: "manual; on a venue, roof, surface or relocation change"
+    local_storage_path: "data/raw/reference/stadiums/part.parquet"
+    primary_key: [stadium_id, valid_from]
+    timestamp_field: valid_from
+    partition_by: none
+    required: true
+    coverage_caveat: >
+      nflverse schedules carry roof/surface per game, which already handles
+      surface swaps and temporary venues correctly. The curated CSV supplies only
+      what schedules lacks: coordinates, elevation, timezone and venue identity.
+      Rows are SCD-2 (valid_from / valid_to) because teams move and roofs change.
+    role: "Venue dimension: coordinates, elevation, timezone, roof, surface, indoor flag."
+
+  coaching_staff:
+    provider: project-curated
+    tier: curated_fallback
+    access: "nfldl.sources.coaching.build()"
+    inputs: ["configs/coaching_staff.csv", schedules]
+    historical_start: 2011
+    historical_end: null
+    update_frequency: "manual; at hires, firings and interim appointments"
+    local_storage_path: "data/raw/reference/coaching_staff/part.parquet"
+    primary_key: [team, role, start_date]
+    timestamp_field: start_date
+    partition_by: none
+    required: true
+    source_notes: >
+      nflverse does not publish an HC/OC/DC history. Rows are curated from
+      official team and NFL announcements and cross-checked against reputable
+      historical football databases. Every row carries `source_url` and
+      `source_note`; a row without provenance fails validation.
+    role: >
+      Identity and tenure only -- coach id/name, team, role, start_date,
+      end_date. Tendencies are NEVER stored here; they are inferred from
+      play_by_play (see the forbidden_downloads list).
+
+  weather:
+    provider: Open-Meteo Historical Weather API (ERA5 reanalysis)
+    tier: reputable_public
+    access: "nfldl.sources.weather.build()"
+    upstream: "https://archive-api.open-meteo.com/v1/archive"
+    alternatives:
+      - "NOAA NCEI Climate Data Online (https://www.ncei.noaa.gov/cdo-web/) -- station observations, requires a token"
+      - "Meteostat Python package -- station + model blend, no token"
+    historical_start: 1940
+    historical_end: null
+    update_frequency: "ERA5 final ~5 days lag; ERA5T near-real-time"
+    local_storage_path: "data/raw/weather/season={season}/part.parquet"
+    primary_key: [game_id]
+    timestamp_field: kickoff_utc
+    partition_by: season
+    required: false
+    license_or_usage_notes: >
+      Open-Meteo archive is free for non-commercial use, attribution required,
+      no API key. ERA5 is Copernicus/ECMWF licensed. Check current terms before
+      any commercial use.
+    coverage_caveat: >
+      REANALYSIS, not a forecast. It is what the weather actually was, which is
+      not what a pregame forecaster knew. For honest pregame features either
+      accept the mild optimism and document it, or source archived forecasts.
+      Indoor and closed-roof games get neutral weather and an `is_indoor` flag
+      rather than an outdoor observation.
+    role: "Kickoff temperature, wind, precipitation, humidity, pressure at the venue."

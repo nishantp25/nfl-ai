@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nfldl"
+version = "1.0.0"
+description = "Manifest-driven, leakage-aware raw data layer for NFL game forecasting"
+requires-python = ">=3.10"
+dependencies = [
+  "nflreadpy>=0.1.5",
+  "polars>=1.0",
+  "pyyaml>=6.0",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.10"]
+meteostat = ["meteostat>=1.6"]
+
+[project.scripts]
+nfldl = "nfldl.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nfldl"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
