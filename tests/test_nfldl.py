@@ -7,7 +7,7 @@ reach a pregame frame.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import polars as pl
 import pytest
@@ -16,7 +16,6 @@ from nfldl import conflicts, pit, quality
 from nfldl.manifest import Coverage, ManifestError, get_manifest
 from nfldl.registry import REGISTRY, resolve_order
 from nfldl.sources import coaching
-
 
 UTC = timezone.utc
 
@@ -329,3 +328,36 @@ def test_null_rate_check_flags_a_column_that_did_not_exist_yet():
     result = quality.check_null_rates(df, spec)
     assert result.severity == "warning"
     assert "defense_coverage_type" in result.data["near_empty"]
+
+def test_injury_burden_excludes_post_kickoff_revision():
+    """Post-kickoff injury revisions must never affect a pregame feature row."""
+    from examples.pregame_frame import injury_burden
+
+    kickoff = datetime(2023, 9, 10, 17, 0, tzinfo=UTC)
+
+    games = pl.DataFrame({
+        "game_id": ["g1"],
+        "season": [2023],
+        "week": [1],
+        "team": ["KC"],
+        "kickoff_utc": [kickoff],
+    })
+
+    injuries = pl.DataFrame({
+        "season": [2023, 2023, 2023],
+        "week": [1, 1, 1],
+        "team": ["KC", "KC", "KC"],
+        "gsis_id": ["p1", "p1", "p2"],
+        "report_status": ["Questionable", "Out", "Out"],
+        "date_modified": [
+            datetime(2023, 9, 9, 18, 0, tzinfo=UTC),
+            datetime(2023, 9, 10, 20, 0, tzinfo=UTC),
+            datetime(2023, 9, 9, 19, 0, tzinfo=UTC),
+        ],
+    })
+
+    out = injury_burden(injuries, games)
+
+    assert out.get_column("n_out").to_list() == [1]
+    assert out.get_column("n_questionable").to_list() == [1]
+    assert out.get_column("n_doubtful").to_list() == [0]
