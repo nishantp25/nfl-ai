@@ -224,6 +224,19 @@ datasets:
     local_storage_path: "data/raw/nflverse/depth_charts/season={season}/part.parquet"
     primary_key: [season, week, club_code, gsis_id, depth_position]
     timestamp_field: dt
+    schema_epochs:
+      - start: 2001
+        end: 2024
+        primary_key: [season, week, club_code, gsis_id, depth_position, game_type, depth_team, formation]
+        timestamp_field: null
+        nullable_key_rules:
+          - column: week
+            when:
+              game_type: SBBYE
+      - start: 2025
+        end: null
+        primary_key: [dt, team, gsis_id, pos_id, pos_slot, pos_rank]
+        timestamp_field: dt
     partition_by: season
     required: false
     point_in_time: week
@@ -242,6 +255,15 @@ datasets:
     local_storage_path: "data/raw/nflverse/injuries/season={season}/part.parquet"
     primary_key: [season, week, team, gsis_id]
     timestamp_field: date_modified
+    schema_epochs:
+      - start: 2009
+        end: 2024
+        primary_key: [season, week, team, gsis_id]
+        timestamp_field: date_modified
+      - start: 2025
+        end: null
+        primary_key: [season, week, team, gsis_id]
+        timestamp_field: null
     partition_by: season
     required: true
     point_in_time: week

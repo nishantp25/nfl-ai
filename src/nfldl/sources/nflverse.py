@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import nflreadpy as nfl
 import polars as pl
@@ -180,7 +181,13 @@ def fetch_weekly_rosters(season: int, **_: Any) -> pl.DataFrame:
 
 
 def fetch_depth_charts(season: int, **_: Any) -> pl.DataFrame:
-    return _with_fallback("depth_charts", lambda: nfl.load_depth_charts(season), season=season)
+    """Fetch depth charts and remove exact duplicate upstream rows."""
+    df = _with_fallback(
+        "depth_charts",
+        lambda: nfl.load_depth_charts(season),
+        season=season,
+    )
+    return df.unique(maintain_order=True)
 
 
 def fetch_injuries(season: int, **_: Any) -> pl.DataFrame:
