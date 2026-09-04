@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import logging
 import warnings
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Iterable, Literal
+from typing import Literal
 
 import polars as pl
 
@@ -59,6 +60,7 @@ DATASET_AVAILABILITY: dict[str, Availability] = {
     "nextgen_stats": "postgame",
     "pfr_advstats": "postgame",
     "weather": "unknown",         # ERA5 reanalysis is not a pregame forecast
+    "weather_forecast": "pregame",  # snapshot known at its actual retrieval time
 }
 
 # Columns that are postgame even inside an otherwise-pregame table.
@@ -118,8 +120,13 @@ def knowledge_time(
 
     if availability == "pregame":
         if report_col and report_col in df.columns:
-            known = pl.min_horizontal(
-                pl.col(report_col).cast(pl.Datetime("us", "UTC")), pl.col(kickoff_col)
+            # Preserve the actual knowledge timestamp. Never clamp a late
+            # report backward to kickoff; doing so disguises future information.
+            # A missing report timestamp falls back conservatively to kickoff.
+            known = (
+                pl.col(report_col)
+                .cast(pl.Datetime("us", "UTC"))
+                .fill_null(pl.col(kickoff_col).cast(pl.Datetime("us", "UTC")))
             )
         else:
             known = pl.col(kickoff_col)
@@ -230,9 +237,15 @@ def audit_frame(
             continue
 
         origin = dataset_of.get(col)
-        if origin and DATASET_AVAILABILITY.get(origin) == "postgame":
-            if not any(tag in col for tag in ("_lag", "_prior", "_rolling", "_ewma", "_todate")):
-                findings.append(
+        if (
+            origin
+            and DATASET_AVAILABILITY.get(origin) == "postgame"
+            and not any(
+                tag in col
+                for tag in ("_lag", "_prior", "_rolling", "_ewma", "_todate")
+            )
+        ):
+            findings.append(
                     LeakageFinding(
                         col,
                         f"sourced from postgame dataset '{origin}' with no lag marker in the name",

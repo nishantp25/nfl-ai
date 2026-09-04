@@ -7,7 +7,8 @@ Rules this enforces at run time, not just in documentation:
 * Dependencies are ingested first (schedules -> stadiums -> weather).
 * Failures are per-partition. One bad season does not abort a 15-season run,
   and the failure is recorded rather than swallowed.
-* Re-running is cheap: existing partitions are skipped unless ``--force``.
+* Re-running is cheap: existing replace-mode partitions are skipped unless
+  ``--force``; append-mode snapshot datasets are revisited to collect new rows.
 * Partition identity is preserved in the rows themselves. If an upstream
   schema omits a partition column such as ``season``, ingestion restores it
   from the requested partition. If upstream supplies a conflicting value,
@@ -24,7 +25,7 @@ from typing import Any
 
 import polars as pl
 
-from .config import RAW_DIR, get_settings, nfl_season_of
+from .config import RAW_DIR, get_settings, league_year_of, nfl_season_of
 from .manifest import DatasetSpec, get_manifest
 from .registry import get_adapter, resolve_order
 from .storage import partition_exists, write_partition
@@ -143,7 +144,15 @@ def _seasons_for(
     spec: DatasetSpec,
     requested: list[int] | None,
 ) -> tuple[list[int], list[int]]:
-    """Split requested seasons into available/unavailable verified coverage."""
+    """Split requested seasons into available/unavailable verified coverage.
+
+    Non-seasonal datasets do not participate in season coverage checks.
+    Their partition enumeration is handled independently by
+    :func:`_partitions_for`.
+    """
+    if not spec.is_partitioned_by_season:
+        return [], []
+
     cfg = get_settings()
 
     wanted = (
@@ -152,7 +161,17 @@ def _seasons_for(
         else cfg.target_seasons
     )
 
-    current = nfl_season_of()
+    horizon = spec.raw.get("season_horizon", "playing_season")
+
+    if horizon == "playing_season":
+        current = nfl_season_of()
+    elif horizon == "league_year":
+        current = league_year_of()
+    else:
+        raise ValueError(
+            f"{spec.name}: unknown season_horizon {horizon!r}; "
+            "expected 'playing_season' or 'league_year'"
+        )
 
     coverage = (
         spec.verified
@@ -284,6 +303,7 @@ def ingest_dataset(
     ):
         if (
             not force
+            and spec.raw.get("storage_mode", "replace") != "append"
             and partition_exists(
                 spec,
                 root=RAW_DIR,

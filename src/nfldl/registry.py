@@ -13,13 +13,14 @@ failure rather than a warning:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import polars as pl
 
 from .manifest import DatasetSpec, ManifestError, get_manifest
-from .sources import coaching, nflverse, stadiums, weather
+from .sources import coaching, nflverse, stadiums, weather, weather_forecast
 
 Fetcher = Callable[..., pl.DataFrame]
 
@@ -85,6 +86,11 @@ _ADAPTERS: list[Adapter] = [
     Adapter("stadiums", stadiums.build, needs_local=("schedules",)),
     Adapter("coaching_staff", coaching.build, needs_local=("schedules",)),
     Adapter("weather", weather.build, needs_local=("schedules", "stadiums")),
+    Adapter(
+        "weather_forecast",
+        weather_forecast.build,
+        needs_local=("schedules", "stadiums"),
+    ),
 ]
 
 REGISTRY: dict[str, Adapter] = {a.name: a for a in _ADAPTERS}

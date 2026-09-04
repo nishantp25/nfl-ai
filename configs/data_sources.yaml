@@ -567,3 +567,35 @@ datasets:
       Indoor and closed-roof games get neutral weather and an `is_indoor` flag
       rather than an outdoor observation.
     role: "Kickoff temperature, wind, precipitation, humidity, pressure at the venue."
+
+  weather_forecast:
+    provider: Open-Meteo Forecast API
+    tier: reputable_public
+    access: "nfldl.sources.weather_forecast.build()"
+    upstream: "https://api.open-meteo.com/v1/forecast"
+    historical_start: 2026
+    historical_end: null
+    verified_start: null
+    verified_end: null
+    update_frequency: "on demand; one immutable snapshot per retrieval"
+    local_storage_path: "data/raw/weather_forecast/season={season}/part.parquet"
+    primary_key: [game_id, retrieved_at_utc]
+    timestamp_field: retrieved_at_utc
+    partition_by: season
+    required: false
+    storage_mode: append
+    season_horizon: league_year
+    point_in_time: retrieval
+    license_or_usage_notes: >
+      Open-Meteo forecast APIs are keyless for eligible non-commercial use.
+      Check current provider terms before commercial deployment.
+    coverage_caveat: >
+      This adapter currently collects live point-in-time snapshots only;
+      historical forecast reconstruction is not implemented. PIT-safe local
+      coverage therefore begins when this collector starts running in 2026.
+      Every stored row retains its retrieval timestamp so a backtest can prove
+      the forecast existed before kickoff.
+    role: >
+      Pregame weather forecast snapshots known at prediction time. Kept
+      separate from ERA5 reanalysis so realized weather can never silently
+      masquerade as a point-in-time forecast.

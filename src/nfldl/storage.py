@@ -107,7 +107,68 @@ def write_partition(
     dest = spec.storage_path(root, **partition_keys)
     stamped = stamp(df, spec, now)
 
-    _atomic_write_parquet(stamped, dest)
+    storage_mode = spec.raw.get("storage_mode", "replace")
+
+    if storage_mode == "append":
+        if not spec.primary_key:
+            raise ValueError(
+                f"{spec.name}: append storage requires a primary key"
+            )
+
+        missing_new = [
+            column
+            for column in spec.primary_key
+            if column not in stamped.columns
+        ]
+        if missing_new:
+            raise ValueError(
+                f"{spec.name}: append rows are missing primary-key "
+                f"columns {missing_new}"
+            )
+
+        if dest.exists():
+            existing = pl.read_parquet(dest)
+
+            missing_existing = [
+                column
+                for column in spec.primary_key
+                if column not in existing.columns
+            ]
+            if missing_existing:
+                raise ValueError(
+                    f"{spec.name}: existing append partition is missing "
+                    f"primary-key columns {missing_existing}"
+                )
+
+            # Existing rows deliberately come first. `keep="first"` makes
+            # persisted snapshots immutable if a later provider response
+            # repeats the same logical key with different values.
+            stored = (
+                pl.concat(
+                    [existing, stamped],
+                    how="diagonal_relaxed",
+                )
+                .unique(
+                    subset=list(spec.primary_key),
+                    keep="first",
+                    maintain_order=True,
+                )
+            )
+        else:
+            stored = stamped.unique(
+                subset=list(spec.primary_key),
+                keep="first",
+                maintain_order=True,
+            )
+    elif storage_mode == "replace":
+        stored = stamped
+    else:
+        raise ValueError(
+            f"{spec.name}: unknown storage_mode {storage_mode!r}; "
+            "expected 'replace' or 'append'"
+        )
+
+    _atomic_write_parquet(stored, dest)
 
     mf = get_manifest()
     record = PartitionRecord(
@@ -117,9 +178,9 @@ def write_partition(
         provider=spec.provider,
         tier=spec.tier,
         access=spec.access,
-        rows=stamped.height,
-        columns=stamped.width,
-        column_names=stamped.columns,
+        rows=stored.height,
+        columns=stored.width,
+        column_names=stored.columns,
         content_sha256=_sha256_of(dest),
         ingested_at=now.isoformat(),
         manifest_version=mf.version,
@@ -134,7 +195,7 @@ def write_partition(
     with PROVENANCE_LOG_PATH.open("a") as fh:
         fh.write(record.to_json() + "\n")
 
-    log.info("wrote %s %s -> %s rows", spec.name, partition_keys or "", f"{stamped.height:,}")
+    log.info("wrote %s %s -> %s rows", spec.name, partition_keys or "", f"{stored.height:,}")
     return record
 
 
