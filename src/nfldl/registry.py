@@ -84,7 +84,7 @@ _ADAPTERS: list[Adapter] = [
     _nflverse("combine", nflverse.fetch_combine),
     # ---- supplementary -------------------------------------------------
     Adapter("stadiums", stadiums.build, needs_local=("schedules",)),
-    Adapter("coaching_staff", coaching.build, needs_local=("schedules",)),
+    Adapter("coaching_staff", coaching.build),
     Adapter("weather", weather.build, needs_local=("schedules", "stadiums")),
     Adapter(
         "weather_forecast",

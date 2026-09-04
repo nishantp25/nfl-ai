@@ -521,24 +521,34 @@ datasets:
     provider: project-curated
     tier: curated_fallback
     access: "nfldl.sources.coaching.build()"
-    inputs: ["configs/coaching_staff.csv", schedules]
-    historical_start: 2011
+    inputs: ["configs/coaching_staff.csv"]
+    historical_start: null
     historical_end: null
-    update_frequency: "manual; at hires, firings and interim appointments"
+    verified_start: null
+    verified_end: null
+    update_frequency: "manual; at coordinator/staff hires, departures and interim appointments"
     local_storage_path: "data/raw/reference/coaching_staff/part.parquet"
     primary_key: [team, role, start_date]
     timestamp_field: start_date
     partition_by: none
-    required: true
+    required: false
+    coverage_caveat: >
+      No coordinator/staff history is bundled yet. Coverage begins only where
+      rows have been explicitly curated with real provenance. Head-coach
+      identity is not stored here: nflverse schedules already provide
+      home_coach and away_coach for every game in the project's verified
+      2011-present schedule coverage.
     source_notes: >
-      nflverse does not publish an HC/OC/DC history. Rows are curated from
-      official team and NFL announcements and cross-checked against reputable
-      historical football databases. Every row carries `source_url` and
-      `source_note`; a row without provenance fails validation.
+      Non-head-coach staff rows are curated from official team and NFL
+      announcements and may be cross-checked against reputable historical
+      football databases. Every row carries source_url and source_note; a row
+      without provenance fails validation. HC rows are rejected because
+      game-level head-coach identity belongs to schedules.
     role: >
-      Identity and tenure only -- coach id/name, team, role, start_date,
-      end_date. Tendencies are NEVER stored here; they are inferred from
-      play_by_play (see the forbidden_downloads list).
+      Optional sourced coordinator/staff identity and real tenure dates only
+      (OC/DC/STC/PGC). Head-coach identity comes directly from schedules.
+      Coaching tendencies are NEVER stored here; they are inferred from
+      play_by_play so they can be reconstructed point-in-time.
 
   weather:
     provider: Open-Meteo Historical Weather API (ERA5 reanalysis)

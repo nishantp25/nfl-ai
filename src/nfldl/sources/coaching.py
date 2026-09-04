@@ -1,19 +1,19 @@
-"""Coaching staff history: identity and tenure only.
+"""Optional curated non-head-coach staff history.
 
-Head coaches do not need to be curated at all. ``nflverse`` schedules carry
-``home_coach`` / ``away_coach`` on every game, which means head-coach tenure is
-*derivable from the canonical game table* -- including mid-season firings and
-interim appointments, dated to the exact game. That is strictly better than a
-hand-maintained list: it cannot drift, and it is reproducible.
+Head-coach identity belongs to the canonical nflverse schedules table:
+``home_coach`` and ``away_coach`` identify the HC assigned to each NFL game.
+Those game-level fields must be used directly rather than converted into
+invented employment-tenure dates. Future schedules may already contain coach
+assignments, so a future scheduled game is not evidence that a coach's tenure
+is known to continue through that date.
 
-Coordinators (OC/DC) are not in nflverse. Those come from
-``configs/coaching_staff.csv``, curated from official team and league
-announcements, with ``source_url`` mandatory on every row.
+This module therefore stores only sourced non-HC staff tenures such as OC, DC,
+STC and PGC from ``configs/coaching_staff.csv``. Every curated row requires
+provenance.
 
-What this module deliberately does NOT store: tendencies. No "aggressive on
-fourth down", no scheme labels, no pace descriptors. Those are derived from
-play-by-play, per the manifest's ``forbidden_downloads`` list, so they can be
-recomputed as of any historical date without leaking later seasons.
+Coaching tendencies are deliberately not stored here. They are derived from
+prior play-by-play so historical features can be reconstructed point-in-time
+without leaking later games or seasons.
 """
 
 from __future__ import annotations
@@ -24,8 +24,7 @@ from typing import Any
 
 import polars as pl
 
-from ..config import CONFIG_DIR, RAW_DIR
-from ..manifest import get_manifest
+from ..config import CONFIG_DIR
 
 log = logging.getLogger(__name__)
 
@@ -34,17 +33,7 @@ CURATED_COLUMNS = [
     "coach_name", "team", "role", "start_date", "end_date",
     "interim", "source_url", "source_note",
 ]
-VALID_ROLES = {"HC", "OC", "DC", "STC", "PGC"}
-
-
-def _as_date(col: str) -> pl.Expr:
-    """Parse gameday whether nflverse ships it as Date or as a string."""
-    return (
-        pl.when(pl.col(col).cast(pl.String).is_not_null())
-        .then(pl.col(col).cast(pl.String).str.to_date("%Y-%m-%d", strict=False))
-        .otherwise(None)
-        .alias(col)
-    )
+VALID_ROLES = {"OC", "DC", "STC", "PGC"}
 
 
 def coach_id(name: str) -> str:
@@ -68,80 +57,6 @@ def coach_id_expr(col: str = "coach_name") -> pl.Expr:
     return e.str.replace_all(" ", "_", literal=True).str.replace_all("-", "_", literal=True)
 
 
-def head_coach_stints(schedules: pl.DataFrame) -> pl.DataFrame:
-    """Derive HC tenures by run-length encoding coach-per-game-date per team.
-
-    A "stint" is a maximal consecutive run of games a team played under one
-    coach. Splitting on discontinuity rather than on season means a mid-season
-    change produces two correctly-dated rows, and a coach who returns after a
-    gap produces two stints rather than one wrongly-continuous one.
-    """
-    needed = {"season", "gameday", "home_team", "away_team", "home_coach", "away_coach"}
-    missing = needed - set(schedules.columns)
-    if missing:
-        raise ValueError(f"schedules is missing {sorted(missing)}; cannot derive coaches")
-
-    home = schedules.select(
-        pl.col("season"),
-        _as_date("gameday"),
-        pl.col("game_id"),
-        pl.col("home_team").alias("team"),
-        pl.col("home_coach").alias("coach_name"),
-    )
-    away = schedules.select(
-        pl.col("season"),
-        _as_date("gameday"),
-        pl.col("game_id"),
-        pl.col("away_team").alias("team"),
-        pl.col("away_coach").alias("coach_name"),
-    )
-
-    long = (
-        pl.concat([home, away])
-        .drop_nulls(["coach_name", "gameday"])
-        .filter(pl.col("coach_name").str.strip_chars() != "")
-        .sort(["team", "gameday"])
-    )
-
-    # New stint whenever the coach changes for a team, in date order.
-    long = long.with_columns(
-        (pl.col("coach_name") != pl.col("coach_name").shift(1).over("team"))
-        .fill_null(True)
-        .cum_sum()
-        .over("team")
-        .alias("stint_no")
-    )
-
-    stints = (
-        long.group_by(["team", "stint_no"])
-        .agg(
-            pl.col("coach_name").first(),
-            pl.col("gameday").min().alias("first_game"),
-            pl.col("gameday").max().alias("last_game"),
-            pl.col("season").min().alias("first_season"),
-            pl.col("season").max().alias("last_season"),
-            pl.len().alias("games"),
-        )
-        .sort(["team", "first_game"])
-    )
-
-    return stints.select(
-        coach_id_expr().alias("coach_id"),
-        "coach_name",
-        "team",
-        pl.lit("HC").alias("role"),
-        pl.col("first_game").alias("start_date"),
-        pl.col("last_game").alias("end_date"),
-        "first_season",
-        "last_season",
-        "games",
-        pl.lit(False).alias("interim"),
-        pl.lit("nflverse").alias("source_tier"),
-        pl.lit("derived from nflverse schedules home_coach/away_coach").alias("source_note"),
-        pl.lit("https://github.com/nflverse/nflverse-data/releases/tag/schedules").alias("source_url"),
-    )
-
-
 def load_curated() -> pl.DataFrame:
     """Coordinator rows. Returns an empty, correctly-typed frame if absent."""
     schema = {
@@ -151,8 +66,8 @@ def load_curated() -> pl.DataFrame:
     }
     if not CURATED_CSV.exists():
         log.warning(
-            "no coordinator file at %s -- coaching_staff will contain head coaches only. "
-            "OC/DC features will be unavailable, not silently wrong.",
+            "no curated staff file at %s -- coaching_staff will be empty. "
+            "Coordinator/staff features will be unavailable, not silently wrong.",
             CURATED_CSV,
         )
         return pl.DataFrame(schema=schema)
@@ -168,9 +83,22 @@ def load_curated() -> pl.DataFrame:
         pl.col("interim").cast(pl.Boolean),
     )
 
-    bad_roles = set(df.get_column("role").unique().to_list()) - VALID_ROLES
+    roles = set(
+        df.get_column("role").unique().to_list()
+    )
+
+    if "HC" in roles:
+        raise ValueError(
+            "head coach rows are not allowed in coaching_staff; "
+            "game-level HC identity belongs to nflverse schedules"
+        )
+
+    bad_roles = roles - VALID_ROLES
     if bad_roles:
-        raise ValueError(f"unknown coaching roles in {CURATED_CSV.name}: {sorted(bad_roles)}")
+        raise ValueError(
+            f"unknown coaching roles in {CURATED_CSV.name}: "
+            f"{sorted(bad_roles)}"
+        )
 
     unsourced = df.filter(
         pl.col("source_url").is_null() | (pl.col("source_url").str.strip_chars() == "")
@@ -184,27 +112,57 @@ def load_curated() -> pl.DataFrame:
 
 
 def build(**_: Any) -> pl.DataFrame:
-    """Union derived head-coach stints with curated coordinator rows."""
-    from ..storage import read_dataset
+    """Build the optional curated non-head-coach staff dimension.
 
-    mf = get_manifest()
-    sched = read_dataset(mf["schedules"], root=RAW_DIR)
-    hc = head_coach_stints(sched)
-
+    Head-coach identity deliberately does not live in this table. nflverse
+    schedules already provide the HC assigned to each game, which is the
+    correct game-level source for point-in-time modelling.
+    """
     curated = load_curated()
-    if curated.height:
-        curated = curated.with_columns(
-            coach_id_expr().alias("coach_id"),
-            pl.col("start_date").dt.year().alias("first_season"),
-            pl.col("end_date").dt.year().alias("last_season"),
-            pl.lit(None, dtype=pl.UInt32).alias("games"),
-            pl.lit("curated_fallback").alias("source_tier"),
-        ).select(hc.columns)
-        out = pl.concat([hc, curated], how="vertical_relaxed")
-    else:
-        out = hc
 
-    out = out.sort(["team", "role", "start_date"])
+    if curated.is_empty():
+        return curated.with_columns(
+            pl.lit(None, dtype=pl.String).alias("coach_id"),
+            pl.lit(None, dtype=pl.String).alias("source_tier"),
+        ).select(
+            "coach_id",
+            "coach_name",
+            "team",
+            "role",
+            "start_date",
+            "end_date",
+            "interim",
+            "source_tier",
+            "source_note",
+            "source_url",
+        )
+
+    out = (
+        curated.with_columns(
+            coach_id_expr().alias("coach_id"),
+            pl.lit("curated_fallback").alias("source_tier"),
+        )
+        .select(
+            "coach_id",
+            "coach_name",
+            "team",
+            "role",
+            "start_date",
+            "end_date",
+            "interim",
+            "source_tier",
+            "source_note",
+            "source_url",
+        )
+        .sort(
+            [
+                "team",
+                "role",
+                "start_date",
+            ]
+        )
+    )
+
     _warn_on_gaps(out)
     return out
 
