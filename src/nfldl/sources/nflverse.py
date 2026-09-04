@@ -248,7 +248,12 @@ def fetch_draft_picks(**_: Any) -> pl.DataFrame:
 
 
 def fetch_trades(**_: Any) -> pl.DataFrame:
-    return nfl.load_trades()
+    """Fetch trades and remove exact duplicate upstream rows.
+
+    Distinct trade components must remain separate, including historical rows
+    where pfr_id is blank but pfr_name distinguishes different players.
+    """
+    return nfl.load_trades().unique(maintain_order=True)
 
 
 def fetch_contracts(**_: Any) -> pl.DataFrame:

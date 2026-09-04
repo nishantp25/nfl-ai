@@ -412,21 +412,73 @@ def check_primary_key(
 
 
 def _global_key_nulls(
-    rates: dict[str, float],
+    df: pl.DataFrame,
     spec: DatasetSpec,
 ) -> dict[str, float]:
-    return {
-        column: round(
-            rates[column],
+    """Find invalid null key values for a non-schema-versioned dataset."""
+    key_nulls: dict[str, float] = {}
+
+    for column in spec.primary_key:
+        if column not in df.columns:
+            continue
+
+        null_rows = df.filter(
+            pl.col(column).is_null()
+        )
+
+        if null_rows.height == 0:
+            continue
+
+        rules = [
+            rule
+            for rule in spec.nullable_key_rules
+            if rule.column == column
+        ]
+
+        if rules:
+            condition_fields = {
+                field_name
+                for rule in rules
+                for field_name, _expected in rule.when
+            }
+
+            if any(
+                field_name not in df.columns
+                for field_name in condition_fields
+            ):
+                invalid_count = null_rows.height
+            else:
+                allowed = pl.lit(False)
+
+                for rule in rules:
+                    matches = pl.lit(True)
+
+                    for field_name, expected in rule.when:
+                        condition = (
+                            pl.col(field_name).is_null()
+                            if expected is None
+                            else pl.col(field_name) == pl.lit(expected)
+                        )
+
+                        matches = matches & condition
+
+                    allowed = allowed | matches
+
+                invalid_count = null_rows.filter(
+                    ~allowed
+                ).height
+        else:
+            invalid_count = null_rows.height
+
+        if invalid_count == 0:
+            continue
+
+        key_nulls[column] = round(
+            invalid_count / df.height,
             4,
         )
-        for column in spec.primary_key
-        if rates.get(
-            column,
-            0,
-        )
-        > 0
-    }
+
+    return key_nulls
 
 
 def _schema_key_nulls(
@@ -641,7 +693,7 @@ def check_null_rates(
             )
     else:
         key_nulls = _global_key_nulls(
-            rates,
+            df,
             spec,
         )
 

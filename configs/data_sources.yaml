@@ -417,11 +417,29 @@ datasets:
     historical_end: null
     update_frequency: "as trades occur"
     local_storage_path: "data/raw/nflverse/trades/part.parquet"
-    primary_key: [trade_id, season, gave, received, pick_season, pick_round, pick_number, pfr_id]
-    timestamp_field: null
+    primary_key: [trade_id, season, gave, received, pick_season, pick_round, pick_number, pfr_id, pfr_name]
+    nullable_key_rules:
+      - column: pick_season
+        when:
+          conditional: null
+      - column: pick_round
+        when:
+          pick_number: null
+      - column: pick_number
+        when:
+          conditional: null
+      - column: pick_number
+        when:
+          pfr_name: ""
+    timestamp_field: trade_date
     partition_by: none
     required: false
-    coverage_caveat: "Has a trade date/season but not always an exact timestamp. Treat date granularity as day."
+    point_in_time: date
+    coverage_caveat: >
+      trade_date has calendar-day granularity, not an exact announcement
+      timestamp. For strict point-in-time features, a trade is not considered
+      knowable until the following day; never expose it to an earlier game on
+      the same trade_date.
     role: "Roster movement via trade, including pick-for-pick and pick-for-player."
 
   contracts:

@@ -42,7 +42,7 @@ DATASET_AVAILABILITY: dict[str, Availability] = {
     "players": "static",
     "draft_picks": "static",
     "combine": "static",
-    "rosters": "pregame",
+    "rosters": "unknown",       # season snapshot; no row-level knowledge time
     "weekly_rosters": "pregame",
     "depth_charts": "pregame",
     "injuries": "pregame",        # practice + game-status reports precede kickoff
@@ -122,11 +122,29 @@ def knowledge_time(
         if report_col and report_col in df.columns:
             # Preserve the actual knowledge timestamp. Never clamp a late
             # report backward to kickoff; doing so disguises future information.
+            #
+            # A Date has only calendar-day precision. Casting it directly to a
+            # timestamp would invent 00:00 at the *start* of that day and could
+            # leak a transaction announced later the same day. Date-only facts
+            # therefore become usable at the start of the following NFL day
+            # (Eastern time). Datetime columns keep their real timestamp.
+            if df.schema[report_col] == pl.Date:
+                report_known = (
+                    pl.col(report_col)
+                    .cast(pl.Datetime("us"))
+                    + pl.duration(days=1)
+                ).dt.replace_time_zone(
+                    "America/New_York",
+                    ambiguous="earliest",
+                ).dt.convert_time_zone("UTC")
+            else:
+                report_known = pl.col(report_col).cast(
+                    pl.Datetime("us", "UTC")
+                )
+
             # A missing report timestamp falls back conservatively to kickoff.
-            known = (
-                pl.col(report_col)
-                .cast(pl.Datetime("us", "UTC"))
-                .fill_null(pl.col(kickoff_col).cast(pl.Datetime("us", "UTC")))
+            known = report_known.fill_null(
+                pl.col(kickoff_col).cast(pl.Datetime("us", "UTC"))
             )
         else:
             known = pl.col(kickoff_col)
