@@ -257,7 +257,13 @@ def fetch_trades(**_: Any) -> pl.DataFrame:
 
 
 def fetch_contracts(**_: Any) -> pl.DataFrame:
-    return nfl.load_contracts()
+    """Fetch the current OTC contract snapshot without inventing row identity.
+
+    nflverse can expose exact duplicate contract rows. Remove only those exact
+    duplicates; rows that differ in any field remain distinct because this
+    current-state source does not provide a verified stable contract-row key.
+    """
+    return nfl.load_contracts().unique(maintain_order=True)
 
 
 def fetch_officials(**_: Any) -> pl.DataFrame:

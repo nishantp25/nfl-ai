@@ -43,7 +43,8 @@ DATASET_AVAILABILITY: dict[str, Availability] = {
     "draft_picks": "static",
     "combine": "static",
     "rosters": "unknown",       # season snapshot; no row-level knowledge time
-    "weekly_rosters": "pregame",
+    "weekly_rosters": "unknown",       # historical week snapshot; publication time unavailable
+    "weekly_roster_snapshots": "pregame",  # explicit live retrieval timestamp
     "depth_charts": "pregame",
     "injuries": "pregame",        # practice + game-status reports precede kickoff
     "officials": "pregame",       # crews are announced before the game

@@ -224,7 +224,6 @@ def _extract_seasons(
             column
             for column in (
                 "season",
-                "year_signed",
                 "draft_year",
             )
             if column in df.columns

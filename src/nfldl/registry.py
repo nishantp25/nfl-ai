@@ -20,7 +20,14 @@ from typing import Any
 import polars as pl
 
 from .manifest import DatasetSpec, ManifestError, get_manifest
-from .sources import coaching, nflverse, stadiums, weather, weather_forecast
+from .sources import (
+    coaching,
+    nflverse,
+    stadiums,
+    weather,
+    weather_forecast,
+    weekly_roster_snapshots,
+)
 
 Fetcher = Callable[..., pl.DataFrame]
 
@@ -83,6 +90,11 @@ _ADAPTERS: list[Adapter] = [
     _nflverse("officials", nflverse.fetch_officials),
     _nflverse("combine", nflverse.fetch_combine),
     # ---- supplementary -------------------------------------------------
+    Adapter(
+        "weekly_roster_snapshots",
+        weekly_roster_snapshots.build,
+        needs_local=("weekly_rosters",),
+    ),
     Adapter("stadiums", stadiums.build, needs_local=("schedules",)),
     Adapter("coaching_staff", coaching.build),
     Adapter("weather", weather.build, needs_local=("schedules", "stadiums")),

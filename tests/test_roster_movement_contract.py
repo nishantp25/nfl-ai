@@ -11,12 +11,13 @@ def test_season_rosters_are_not_direct_point_in_time_pregame_data():
     assert pit.DATASET_AVAILABILITY["rosters"] == "unknown"
 
 
-def test_weekly_rosters_are_explicitly_week_grained_pregame_snapshots():
+def test_historical_weekly_rosters_do_not_claim_same_week_pregame_knowledge():
+    """Week identity does not prove when the historical snapshot was published."""
     spec = load_manifest()["weekly_rosters"]
 
-    assert pit.DATASET_AVAILABILITY["weekly_rosters"] == "pregame"
+    assert pit.DATASET_AVAILABILITY["weekly_rosters"] == "unknown"
     assert spec.timestamp_field is None
-    assert spec.raw.get("point_in_time") == "week"
+    assert spec.raw.get("point_in_time") == "week_snapshot"
 
 
 def test_trades_declare_the_real_date_field_and_date_granularity():
@@ -195,3 +196,100 @@ def test_global_nullable_key_rules_reject_invalid_trade_pick_season_null():
     assert not result.passed
     assert result.severity == "error"
     assert "pick_season" in result.data["key_nulls"]
+
+
+
+def test_contracts_do_not_claim_a_false_logical_primary_key():
+    """The OTC current-state table has no verified stable contract-row identity."""
+    spec = load_manifest()["contracts"]
+
+    assert spec.required is False
+    assert spec.primary_key == ()
+
+
+def test_fetch_contracts_removes_only_exact_upstream_duplicates(monkeypatch):
+    """Distinct current-state rows must survive even when old key fields collide."""
+    from nfldl.sources import nflverse
+
+    raw = pl.DataFrame(
+        {
+            "player": [
+                "Example Player",
+                "Example Player",
+                "Example Player",
+            ],
+            "position": [
+                "WR",
+                "WR",
+                "PR",
+            ],
+            "team": [
+                "Example",
+                "Example",
+                "Example",
+            ],
+            "is_active": [
+                False,
+                False,
+                False,
+            ],
+            "year_signed": [
+                2022,
+                2022,
+                2022,
+            ],
+            "years": [
+                1,
+                1,
+                1,
+            ],
+            "value": [
+                1.0,
+                1.0,
+                1.0,
+            ],
+            "apy": [
+                1.0,
+                1.0,
+                1.0,
+            ],
+            "guaranteed": [
+                0.0,
+                0.0,
+                0.0,
+            ],
+            "otc_id": [
+                123,
+                123,
+                123,
+            ],
+        }
+    )
+
+    monkeypatch.setattr(
+        nflverse.nfl,
+        "load_contracts",
+        lambda: raw,
+    )
+
+    out = nflverse.fetch_contracts()
+
+    assert out.height == 2
+    assert sorted(out.get_column("position").to_list()) == [
+        "PR",
+        "WR",
+    ]
+
+
+
+def test_contracts_explicitly_declare_current_snapshot_semantics():
+    """Retrospective contract fields must not masquerade as historical PIT data."""
+    spec = load_manifest()["contracts"]
+
+    assert spec.raw.get("point_in_time") == "current_snapshot"
+
+    caveat = str(spec.raw.get("coverage_caveat", "")).lower()
+
+    assert "historical pregame" in caveat
+    assert "year_signed" in caveat
+    assert "does not establish" in caveat

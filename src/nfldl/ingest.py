@@ -453,6 +453,25 @@ def ingest(
         targets
     )
 
+    # Append-mode datasets represent new point-in-time observations. Their
+    # replace-mode dependencies must therefore be refreshed before collection;
+    # otherwise a new retrieval timestamp could merely describe stale local
+    # data. Walk dependencies recursively so nested source requirements are
+    # refreshed too.
+    live_dependencies: set[str] = set()
+
+    def collect_live_dependencies(name: str) -> None:
+        for dependency in get_adapter(name).needs_local:
+            if dependency in live_dependencies:
+                continue
+
+            live_dependencies.add(dependency)
+            collect_live_dependencies(dependency)
+
+    for target in targets:
+        if mf[target].raw.get("storage_mode", "replace") == "append":
+            collect_live_dependencies(target)
+
     if ordered != targets:
         log.info(
             "dependency-ordered plan: %s",
@@ -471,11 +490,22 @@ def ingest(
             name,
         )
 
+        refresh_live_dependency = (
+            name in live_dependencies
+            and mf[name].raw.get("storage_mode", "replace") != "append"
+        )
+
+        if refresh_live_dependency and not force:
+            log.info(
+                "refreshing %s because it feeds an append-mode live snapshot",
+                name,
+            )
+
         report.results.extend(
             ingest_dataset(
                 name,
                 seasons=seasons,
-                force=force,
+                force=force or refresh_live_dependency,
                 dry_run=dry_run,
             )
         )

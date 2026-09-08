@@ -1,4 +1,4 @@
-﻿"""Regression tests for append-only snapshot datasets."""
+"""Regression tests for append-only snapshot datasets."""
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -258,3 +258,84 @@ def test_normal_dataset_still_skips_existing_partition(
 
     assert not fetched["called"]
     assert result[0].status == "skipped_exists"
+
+
+def test_live_snapshot_refreshes_replace_mode_dependencies(
+    monkeypatch,
+):
+    """A live observation must not be stamped from a stale cached dependency."""
+    dependency_spec = _snapshot_spec(
+        append=False,
+    )
+    snapshot_spec = _snapshot_spec(
+        append=True,
+    )
+
+    manifest = {
+        "weekly_rosters": dependency_spec,
+        "weekly_roster_snapshots": snapshot_spec,
+    }
+
+    calls = []
+
+    monkeypatch.setattr(
+        ingest,
+        "get_manifest",
+        lambda: manifest,
+    )
+    monkeypatch.setattr(
+        ingest,
+        "resolve_order",
+        lambda _targets: [
+            "weekly_rosters",
+            "weekly_roster_snapshots",
+        ],
+    )
+    monkeypatch.setattr(
+        ingest,
+        "get_adapter",
+        lambda name: SimpleNamespace(
+            needs_local=(
+                ("weekly_rosters",)
+                if name == "weekly_roster_snapshots"
+                else ()
+            ),
+        ),
+    )
+
+    def fake_ingest_dataset(
+        name,
+        *,
+        seasons=None,
+        force=False,
+        dry_run=False,
+    ):
+        calls.append(
+            (
+                name,
+                force,
+            )
+        )
+        return []
+
+    monkeypatch.setattr(
+        ingest,
+        "ingest_dataset",
+        fake_ingest_dataset,
+    )
+
+    ingest.ingest(
+        names=["weekly_roster_snapshots"],
+        seasons=[2026],
+    )
+
+    assert calls == [
+        (
+            "weekly_rosters",
+            True,
+        ),
+        (
+            "weekly_roster_snapshots",
+            False,
+        ),
+    ]

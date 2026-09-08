@@ -423,3 +423,22 @@ def test_write_back_accepts_genuinely_verified_coverage(
     assert 'verified_on: "2026-09-02"' in updated
     assert "verified_start: 2012" in updated
     assert "verified_end: 2014" in updated
+
+def test_year_signed_does_not_prove_historical_snapshot_coverage():
+    """Contract signing years inside one current snapshot are not PIT coverage."""
+    df = pl.DataFrame(
+        {
+            "year_signed": [
+                2012,
+                2013,
+                2014,
+            ],
+            "row_id": [
+                1,
+                2,
+                3,
+            ],
+        }
+    )
+
+    assert verify._extract_seasons(df) == []

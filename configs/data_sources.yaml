@@ -206,11 +206,49 @@ datasets:
     timestamp_field: null
     partition_by: season
     required: true
-    point_in_time: week          # week-grained; usable as-of week W for week W
+    point_in_time: week_snapshot
+    coverage_caveat: >
+      Historical nflverse weekly rosters identify the roster state associated
+      with a season/week, but the rows do not contain a publication, effective,
+      or retrieval timestamp. Week identity alone therefore does not establish
+      that the snapshot was knowable before that week's kickoff. Historical
+      same-week pregame use is prohibited unless a defensible knowledge
+      timestamp is supplied from another source. Live snapshots captured by
+      this project should use their own explicit retrieval timestamps.
     role: >
-      The correct source for "who was actually on this roster that week",
-      including status changes and IR. Never reconstruct historical rosters from
-      the current roster.
+      Historical week-grained evidence of roster state, including status
+      changes and IR. Never reconstruct historical rosters from the current
+      roster and never infer an exact transaction time from a weekly change.
+
+  weekly_roster_snapshots:
+    provider: nflverse
+    tier: nflverse
+    access: "nfldl.sources.weekly_roster_snapshots.build()"
+    historical_start: 2026
+    historical_end: null
+    verified_start: null
+    verified_end: null
+    update_frequency: "on demand; one immutable snapshot per retrieval"
+    local_storage_path: "data/raw/nflverse/weekly_roster_snapshots/season={season}/part.parquet"
+    primary_key: [season, week, team, source_row_sha256, retrieved_at_utc]
+    timestamp_field: retrieved_at_utc
+    partition_by: season
+    required: false
+    storage_mode: append
+    season_horizon: league_year
+    point_in_time: retrieval
+    coverage_caveat: >
+      This dataset contains only live observations captured by this project.
+      Historical nflverse weekly-roster rows do not expose publication,
+      effective, or retrieval timestamps and are not retroactively stamped as
+      pregame knowledge. PIT-safe coverage begins only when this collector is
+      actually run. source_row_sha256 identifies the exact observed source row;
+      it is not a substitute for canonical player identity.
+    role: >
+      Live point-in-time roster-state snapshots for pregame features. Repeated
+      retrievals preserve immutable observations so later roster changes can
+      affect future games without rewriting what the model could have known at
+      an earlier prediction time.
 
   depth_charts:
     provider: nflverse
@@ -450,16 +488,20 @@ datasets:
     historical_end: null
     update_frequency: "continuous"
     local_storage_path: "data/raw/nflverse/contracts/part.parquet"
-    primary_key: [otc_id, year_signed, team, value]
+    primary_key: []
     timestamp_field: null
+    point_in_time: current_snapshot
     partition_by: none
     required: false
     leakage_risk: high
     coverage_caveat: >
       This is a CURRENT-STATE table describing contracts as they are known now,
-      including restructures applied after the fact. It is not a point-in-time
-      cap ledger. Using it as a pregame feature for a 2014 game leaks the future.
-      Only `year_signed` and the original terms are safely historical.
+      including restructures and status changes applied after the fact. It is
+      not a historical point-in-time cap ledger and must not be used directly
+      for historical pregame features. `year_signed` is retrospective metadata
+      and does not establish when a contract fact became knowable before a game.
+      Historical contract features require separately sourced, dated events or
+      snapshots with defensible knowledge timestamps.
     role: "Contract value as a rough proxy for market-priced player value."
 
   officials:
