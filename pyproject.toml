@@ -9,6 +9,7 @@ description = "Manifest-driven, leakage-aware raw data layer for NFL game foreca
 requires-python = ">=3.10"
 dependencies = [
   "nflreadpy>=0.1.5",
+  "scikit-learn==1.9.1",
   "polars>=1.0",
   "pyyaml>=6.0",
   "requests>=2.31",

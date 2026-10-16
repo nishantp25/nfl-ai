@@ -222,7 +222,11 @@ def read_dataset(
     paths: list[Path] = []
 
     if spec.is_partitioned_by_season:
-        wanted = seasons if seasons is not None else spec.verified.seasons()
+        wanted = (
+            seasons
+            if seasons is not None
+            else (spec.verified.seasons() or spec.declared.seasons())
+        )
         for season in wanted:
             keys: dict[str, Any] = {"season": season}
             if "{stat_type}" in spec.local_storage_path:

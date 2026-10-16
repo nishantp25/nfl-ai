@@ -163,7 +163,11 @@ def geography_for_games(games: pl.DataFrame, stadiums: pl.DataFrame) -> pl.DataF
     ).drop_nulls("latitude")
 
     joined = games.join(geo, on="stadium_id", how="left")
-    gameday = pl.col("gameday").cast(pl.Date)
+    gameday = (
+        pl.col("gameday").str.to_date("%Y-%m-%d", strict=True)
+        if games.schema["gameday"] == pl.String
+        else pl.col("gameday").cast(pl.Date)
+    )
     return joined.filter(
         pl.col("latitude").is_null()
         | (

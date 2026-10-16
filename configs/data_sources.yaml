@@ -107,7 +107,7 @@ datasets:
     historical_start: 1999
     historical_end: null
     verified_start: 1999
-    verified_end: 2025
+    verified_end: 2026
     update_frequency: "in-season, roughly daily during the week; final after the season"
     local_storage_path: "data/raw/nflverse/play_by_play/season={season}/part.parquet"
     primary_key: [game_id, play_id]
@@ -176,6 +176,21 @@ datasets:
       and must be recorded as such.
 
   rosters:
+    schema_epochs:
+    - start: 1920
+      end: 2025
+      primary_key:
+      - season
+      - team
+      - gsis_id
+      timestamp_field: null
+    - start: 2026
+      end: null
+      primary_key:
+      - season
+      - team
+      - gsis_it_id
+      timestamp_field: null
     provider: nflverse
     tier: nflverse
     access: "nflreadpy.load_rosters(seasons=...)"
@@ -192,6 +207,23 @@ datasets:
     role: "Season-level roster. Snapshot semantics -- see weekly_rosters for point-in-time."
 
   weekly_rosters:
+    schema_epochs:
+    - start: 2002
+      end: 2025
+      primary_key:
+      - season
+      - week
+      - team
+      - gsis_id
+      timestamp_field: null
+    - start: 2026
+      end: null
+      primary_key:
+      - season
+      - week
+      - team
+      - gsis_it_id
+      timestamp_field: null
     provider: nflverse
     tier: nflverse
     access: "nflreadpy.load_rosters_weekly(seasons=...)"
@@ -263,18 +295,42 @@ datasets:
     primary_key: [season, week, club_code, gsis_id, depth_position]
     timestamp_field: dt
     schema_epochs:
-      - start: 2001
-        end: 2024
-        primary_key: [season, week, club_code, gsis_id, depth_position, game_type, depth_team, formation]
-        timestamp_field: null
-        nullable_key_rules:
-          - column: week
-            when:
-              game_type: SBBYE
-      - start: 2025
-        end: null
-        primary_key: [dt, team, gsis_id, pos_id, pos_slot, pos_rank]
-        timestamp_field: dt
+    - start: 2001
+      end: 2024
+      primary_key:
+      - season
+      - week
+      - club_code
+      - gsis_id
+      - depth_position
+      - game_type
+      - depth_team
+      - formation
+      timestamp_field: null
+      nullable_key_rules:
+      - column: week
+        when:
+          game_type: SBBYE
+    - start: 2025
+      end: 2025
+      primary_key:
+      - dt
+      - team
+      - gsis_id
+      - pos_id
+      - pos_slot
+      - pos_rank
+      timestamp_field: dt
+    - start: 2026
+      end: null
+      primary_key:
+      - dt
+      - team
+      - espn_id
+      - pos_id
+      - pos_slot
+      - pos_rank
+      timestamp_field: dt
     partition_by: season
     required: false
     point_in_time: week
@@ -288,7 +344,7 @@ datasets:
     historical_start: 2009
     historical_end: null
     verified_start: 2009
-    verified_end: 2025
+    verified_end: 2026
     update_frequency: "weekly; practice reports Wed-Fri, game status Fri/Sat"
     local_storage_path: "data/raw/nflverse/injuries/season={season}/part.parquet"
     primary_key: [season, week, team, gsis_id]
@@ -325,7 +381,7 @@ datasets:
     historical_start: 2012
     historical_end: null
     verified_start: 2012
-    verified_end: 2025
+    verified_end: 2026
     update_frequency: "weekly, postgame"
     local_storage_path: "data/raw/nflverse/snap_counts/season={season}/part.parquet"
     primary_key: [game_id, pfr_player_id]
@@ -345,7 +401,7 @@ datasets:
     historical_start: 1999
     historical_end: null
     verified_start: 1999
-    verified_end: 2025
+    verified_end: 2026
     update_frequency: "weekly"
     local_storage_path: "data/raw/nflverse/player_stats/season={season}/part.parquet"
     primary_key: [player_id, season, week, season_type]
@@ -362,7 +418,7 @@ datasets:
     historical_start: 1999
     historical_end: null
     verified_start: 1999
-    verified_end: 2025
+    verified_end: 2026
     update_frequency: "weekly"
     local_storage_path: "data/raw/nflverse/team_stats/season={season}/part.parquet"
     primary_key: [team, season, week, season_type]
