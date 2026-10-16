@@ -61,6 +61,7 @@ DATASET_AVAILABILITY: dict[str, Availability] = {
     "nextgen_stats": "postgame",
     "pfr_advstats": "postgame",
     "weather": "unknown",         # ERA5 reanalysis is not a pregame forecast
+    "injury_snapshots": "pregame",  # actual live observation time
     "weather_forecast": "pregame",  # snapshot known at its actual retrieval time
 }
 

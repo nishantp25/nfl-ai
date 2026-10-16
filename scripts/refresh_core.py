@@ -44,7 +44,7 @@ def main():
         season = nfl_season_of()
         names = ["schedules", "play_by_play", "player_stats", "team_stats",
                  "snap_counts", "rosters", "depth_charts", "injuries",
-                 "weekly_roster_snapshots"]
+                 "weekly_roster_snapshots", "injury_snapshots"]
         run(["-m", "nfldl.cli", "ingest", *names, "-s", str(season), "--force"])
         mf = get_manifest()
         for name in [*names, "weekly_rosters"]:
@@ -94,6 +94,7 @@ def main():
         changed = previous.get("input_sha256") != fingerprint
         if changed:
             run([str(ROOT / "scripts/train_live.py")], timeout=600)
+        run([str(ROOT / "scripts/score_predictions.py")], timeout=120)
         payload = {
             "last_success_utc": datetime.now(timezone.utc).isoformat(),
             "season": season, "input_sha256": fingerprint,

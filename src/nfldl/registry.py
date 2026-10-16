@@ -22,6 +22,7 @@ import polars as pl
 from .manifest import DatasetSpec, ManifestError, get_manifest
 from .sources import (
     coaching,
+    injury_snapshots,
     nflverse,
     stadiums,
     weather,
@@ -90,6 +91,11 @@ _ADAPTERS: list[Adapter] = [
     _nflverse("officials", nflverse.fetch_officials),
     _nflverse("combine", nflverse.fetch_combine),
     # ---- supplementary -------------------------------------------------
+    Adapter(
+        "injury_snapshots",
+        injury_snapshots.build,
+        needs_local=("injuries",),
+    ),
     Adapter(
         "weekly_roster_snapshots",
         weekly_roster_snapshots.build,

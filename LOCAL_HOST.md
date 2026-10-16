@@ -5,7 +5,7 @@ Python: .venv/bin/python (Python 3.12).
 
 ## Unattended operation
 
-Keep the Mac plugged in, awake, lid open, and the user logged in.
+Keep the Mac plugged in, awake, and the user logged in. Closed-lid operation is supported with a connected external display, external keyboard/mouse, and power.
 LaunchAgents resume after login; they do not run while logged out.
 A locked screen is compatible with a logged-in session.
 
@@ -70,3 +70,16 @@ definitions separately; their paths are specific to this Mac.
 
 Ask the user for the actual date/time before any commit or push checkpoint.
 Do not fabricate commit history. Local data and reports are ignored by Git.
+
+## Injury observations and prospective accuracy
+
+The core refresh collects and validates append-only injury_snapshots.
+retrieved_at_utc records when the local collector observed the source;
+it does not establish the source's original publication time.
+These observations are collected but are not model inputs yet.
+
+The core refresh also writes reports/prediction_accuracy.json.
+It selects the latest archived prediction strictly before actual kickoff,
+counts each decisive game once, and skips ties and unavailable results.
+Results become eligible 12 hours after kickoff as a conservative heuristic.
+Accuracy remains null until eligible archived predictions can be scored.

@@ -725,3 +725,30 @@ datasets:
       Pregame weather forecast snapshots known at prediction time. Kept
       separate from ERA5 reanalysis so realized weather can never silently
       masquerade as a point-in-time forecast.
+  injury_snapshots:
+    provider: nflverse
+    tier: nflverse
+    access: nfldl.sources.injury_snapshots.build()
+    historical_start: 2026
+    historical_end: null
+    verified_start: null
+    verified_end: null
+    update_frequency: on demand; one immutable snapshot per retrieval
+    local_storage_path: data/raw/nflverse/injury_snapshots/season={season}/part.parquet
+    primary_key:
+    - season
+    - week
+    - team
+    - source_row_sha256
+    - retrieved_at_utc
+    timestamp_field: retrieved_at_utc
+    partition_by: season
+    required: false
+    storage_mode: append
+    season_horizon: playing_season
+    point_in_time: retrieval
+    coverage_caveat: Live observations only. Retrieval timestamps establish when this
+      project observed the source, not original publication time. Historical injury
+      availability cannot be reconstructed from these snapshots.
+    role: Immutable injury-report observations for future pregame joins; source-row
+      fingerprints are not canonical player identities.
